@@ -1,0 +1,42 @@
+{
+ "mean_help_by_tier": {
+  "same_family": 2.674,
+  "cross_family": 1.106,
+  "family_unaligned": 1.076,
+  "unaligned_unaligned": 1.958
+ },
+ "n_help_obs": {
+  "same_family": 144,
+  "cross_family": 216,
+  "family_unaligned": 288,
+  "unaligned_unaligned": 24
+ },
+ "authority_adoption_rate": {
+  "Ash": 0.273,
+  "Birch": 0.227,
+  "Cedar": 0.455,
+  "Dune": 0.364,
+  "Elm": 0.364,
+  "Fern": 0.318,
+  "Gale": 0.286,
+  "Hale": 0.364
+ },
+ "final_in_closeness": {
+  "Ash": 4.38,
+  "Birch": 4.48,
+  "Cedar": 3.9,
+  "Dune": 4.79,
+  "Elm": 3.28,
+  "Fern": 3.86,
+  "Gale": 4.26,
+  "Hale": 3.41
+ },
+ "corr_closeness_authority": -0.427,
+ "authority_spread_max_minus_min": 0.228,
+ "chance_adoption": 0.333,
+ "api_calls_attempted": 0,
+ "api_calls_failed": 0,
+ "mode": "rules",
+ "rounds": 12,
+ "seed": 1
+}
