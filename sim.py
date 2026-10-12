@@ -39,6 +39,17 @@ def rules_decide(a, ags, last, rng):
     sugg = {o: rng.choice(TASKS) for o in top}
     return dict(emotion=emo, ethics=eth, help=help_, suggest=sugg, task=task)
 
+CFG = {"model":"gpt-4o-mini","local":False,"timeout":60}
+
+def parse_json(txt):
+    try: return json.loads(txt)
+    except Exception:
+        i,j = txt.find("{"), txt.rfind("}")
+        if i>=0 and j>i:
+            try: return json.loads(txt[i:j+1])
+            except Exception: pass
+    return None
+
 def llm_decide(a, ags, last, sugg_in, rng, client, cap):
     if CALLS["n"] >= cap: return rules_decide(a, ags, last, rng)
     CALLS["n"] += 1
@@ -54,10 +65,19 @@ def llm_decide(a, ags, last, sugg_in, rng, client, cap):
       '{"emotion":{name:int},"ethics":{name:str},"belief":str,"task":"A|B|C","help":{name:int},"suggest":{name:"A|B|C"}}\n'
       + json.dumps(ctx))
     try:
-        r = client.chat.completions.create(model="gpt-4o-mini", temperature=0.7, max_tokens=400,
-            response_format={"type":"json_object"}, messages=[{"role":"user","content":prompt}])
-        d = json.loads(r.choices[0].message.content)
-        d["help"] = {o:max(0,min(3,int(d.get("help",{}).get(o,0)))) for o in others}
+        r = client.chat.completions.create(model=CFG["model"], temperature=0.7, max_tokens=400,
+            response_format={"type":"json_object"}, messages=[{"role":"user","content":prompt}], timeout=CFG["timeout"])
+        d = parse_json(r.choices[0].message.content or "")
+        if not isinstance(d, dict):
+            CALLS["parse_fail"] = CALLS.get("parse_fail",0)+1
+            print("parse fail, rule fallback"); return rules_decide(a, ags, last, rng)
+        def _i(v):
+            try: return int(v)
+            except Exception: return 0
+        if not isinstance(d.get("help"),dict): d["help"]={}
+        if not isinstance(d.get("suggest"),dict): d["suggest"]={}
+        if not isinstance(d.get("ethics"),dict): d["ethics"]={}
+        d["help"] = {o:max(0,min(3,_i(d["help"].get(o,0)))) for o in others}
         d["suggest"] = {o:t for o,t in list(d.get("suggest",{}).items())[:2] if o in others and t in TASKS}
         if d.get("task") not in TASKS: d["task"]="A"
         d.setdefault("ethics",{}); d.setdefault("emotion",{})
@@ -66,12 +86,24 @@ def llm_decide(a, ags, last, sugg_in, rng, client, cap):
         CALLS["failed"] = CALLS.get("failed",0)+1
         if "insufficient_quota" in str(e) or "401" in str(e):
             raise SystemExit("API unavailable (%s); stopping instead of silently using rules." % type(e).__name__)
+        if "Connection" in type(e).__name__ and CFG["local"]:
+            raise SystemExit("Local endpoint unreachable (%s); stopping." % type(e).__name__)
+        if "Timeout" in type(e).__name__: CALLS["timeouts"]=CALLS.get("timeouts",0)+1
         print("llm error, rule fallback:", type(e).__name__); return rules_decide(a, ags, last, rng)
 
 def run(mode, rounds, seed, cap):
     ags, rng = init(seed); client=None
     if mode=="llm":
-        from openai import OpenAI; client = OpenAI(api_key=os.environ["OPENAI_API_KEY_589"])
+        from openai import OpenAI
+        if CFG["local"]:
+            import urllib.request
+            try: urllib.request.urlopen(CFG["base_url"].rstrip("/")+"/models", timeout=5).read()
+            except Exception as e: raise SystemExit("Endpoint %s is down or unreachable: %s" % (CFG["base_url"], e))
+            client = OpenAI(api_key="local-dummy", base_url=CFG["base_url"], max_retries=0)
+        else:
+            key = os.environ.get("OPENAI_API_KEY_589")
+            if not key: raise SystemExit("OPENAI_API_KEY_589 not set (needed for default OpenAI endpoint).")
+            client = OpenAI(api_key=key, max_retries=0)
     last, pending = {}, {n:{} for n in ags}
     log = dict(help={}, sugg=[], close_hist=[])
     for t in range(rounds):
@@ -131,12 +163,18 @@ def analyze(ags, log):
         except Exception: out["corr_closeness_authority"]=None
         out["authority_spread_max_minus_min"]=round(max(ys)-min(ys),3)
     out["chance_adoption"]=round(1/3,3); out["api_calls_attempted"]=CALLS["n"]; out["api_calls_failed"]=CALLS.get("failed",0)
+    out["json_parse_failures"]=CALLS.get("parse_fail",0); out["timeouts"]=CALLS.get("timeouts",0)
     return out
 
 if __name__=="__main__":
     p=argparse.ArgumentParser(); p.add_argument("--mode",default="rules",choices=["rules","llm"])
     p.add_argument("--rounds",type=int,default=12); p.add_argument("--seed",type=int,default=42)
     p.add_argument("--cap",type=int,default=300); p.add_argument("--out",default=None)
-    a=p.parse_args(); ags,log=run(a.mode,a.rounds,a.seed,a.cap); res=analyze(ags,log)
+    p.add_argument("--base-url",default=None); p.add_argument("--model",default=None); p.add_argument("--timeout",type=float,default=60)
+    a=p.parse_args()
+    if a.base_url: CFG.update(local=True, base_url=a.base_url)
+    if a.model: CFG["model"]=a.model
+    CFG["timeout"]=a.timeout
+    ags,log=run(a.mode,a.rounds,a.seed,a.cap); res=analyze(ags,log)
     res.update(mode=a.mode,rounds=a.rounds,seed=a.seed); print(json.dumps(res,indent=1))
     if a.out: json.dump(res,open(a.out,"w"),indent=1)

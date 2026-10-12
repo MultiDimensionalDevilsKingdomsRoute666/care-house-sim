@@ -1,0 +1,33 @@
+{
+ "mean_help_by_tier": {
+  "same_family": 0.153,
+  "cross_family": 0.065,
+  "family_unaligned": 0.014,
+  "unaligned_unaligned": 0
+ },
+ "n_help_obs": {
+  "same_family": 72,
+  "cross_family": 108,
+  "family_unaligned": 144,
+  "unaligned_unaligned": 12
+ },
+ "authority_adoption_rate": {},
+ "final_in_closeness": {
+  "Ash": 1.49,
+  "Birch": 1.56,
+  "Cedar": 1.54,
+  "Dune": 1.43,
+  "Elm": 1.43,
+  "Fern": 1.43,
+  "Gale": 1,
+  "Hale": 1
+ },
+ "chance_adoption": 0.333,
+ "api_calls_attempted": 48,
+ "api_calls_failed": 3,
+ "json_parse_failures": 0,
+ "timeouts": 3,
+ "mode": "llm",
+ "rounds": 6,
+ "seed": 42
+}

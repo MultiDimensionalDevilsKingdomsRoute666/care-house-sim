@@ -31,3 +31,24 @@ Modes: `python3 sim.py --mode rules` needs no key. `--mode llm` uses `gpt-4o-min
 
 ## Honest limits
 8 agents and 12 rounds (the paper used 18 agents for 30 rounds). The production model is simplified, there is no Louvain community step, and there is no statistical testing. Treat this as a sketch.
+
+## LLM run (local qwen2.5:0.5b)
+
+Command (sequential calls, one seed, capped at 48 calls = 8 agents x 6 rounds):
+
+    python sim.py --mode llm --base-url http://localhost:11434/v1 --model qwen2.5:0.5b --rounds 6 --cap 48 --seed 42 --timeout 90
+
+`--base-url` uses a dummy key, so no OpenAI key is needed. Without it, the default OpenAI endpoint reads `OPENAI_API_KEY_589`. If the endpoint is down, the script stops with a clear error. Malformed JSON falls back to the rules agent and is counted in `json_parse_failures`.
+
+| metric (seed 42, 6 rounds) | rules baseline | qwen2.5:0.5b |
+|---|---|---|
+| mean help, same family | 2.60 | 0.15 |
+| mean help, cross family | 0.92 | 0.07 |
+| mean help, family to unaligned | 0.90 | 0.01 |
+| mean help, unaligned to unaligned | 1.25 | 0.00 |
+| suggestions made / adoption-closeness corr | yes / r = 0.25 | **0 suggestions / not computable** |
+| final mean in-closeness | about 2.5 to 3.6 | about 1.0 to 1.6 |
+
+LLM run: 48 calls, 0 JSON parse failures, 3 timeouts (90 s each; those turns used the rules fallback), about 10 minutes in total.
+
+Caveats: the evidence is very weak. This used one seed, 6 rounds, and a 0.5B model. The model barely helped anyone, and closeness fell toward the floor. The ordering by distance (same family > cross > unaligned) did appear, but the effects are tiny, and the 3 rule-fallback turns may contribute to them. The model never made a task suggestion, so the authority and adoption question cannot be tested at all. The prompt shows each agent its family and closeness scores, so any family bias may come from the prompt rather than emerge on its own. Nothing here confirms or refutes CAREB-MAS.
