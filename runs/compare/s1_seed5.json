@@ -1,0 +1,49 @@
+{
+ "mean_help_by_tier": {
+  "same_family": 2.681,
+  "cross_family": 1.139,
+  "family_unaligned": 1.16,
+  "unaligned_unaligned": 1.417
+ },
+ "n_help_obs": {
+  "same_family": 144,
+  "cross_family": 216,
+  "family_unaligned": 288,
+  "unaligned_unaligned": 24
+ },
+ "authority_adoption_rate": {
+  "Ash": 0.545,
+  "Birch": 0.273,
+  "Cedar": 0.19,
+  "Dune": 0.409,
+  "Elm": 0.318,
+  "Fern": 0.476,
+  "Gale": 0.5,
+  "Hale": 0.25
+ },
+ "final_in_closeness": {
+  "Ash": 3.83,
+  "Birch": 3.97,
+  "Cedar": 4.43,
+  "Dune": 3.26,
+  "Elm": 3.39,
+  "Fern": 5,
+  "Gale": 4.35,
+  "Hale": 3.64
+ },
+ "corr_closeness_authority": 0.175,
+ "authority_spread_max_minus_min": 0.355,
+ "mean_help_all": 1.488,
+ "min_util": 52.0,
+ "mean_util": 62.5,
+ "final_mean_closeness": 3.984,
+ "chance_adoption": 0.333,
+ "api_calls_attempted": 0,
+ "api_calls_failed": 0,
+ "json_parse_failures": 0,
+ "timeouts": 0,
+ "mode": "rules",
+ "rounds": 12,
+ "seed": 5,
+ "memory": true
+}

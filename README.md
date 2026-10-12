@@ -52,3 +52,41 @@ Command (sequential calls, one seed, capped at 48 calls = 8 agents x 6 rounds):
 LLM run: 48 calls, 0 JSON parse failures, 3 timeouts (90 s each; those turns used the rules fallback), about 10 minutes in total.
 
 Caveats: the evidence is very weak. This used one seed, 6 rounds, and a 0.5B model. The model barely helped anyone, and closeness fell toward the floor. The ordering by distance (same family > cross > unaligned) did appear, but the effects are tiny, and the 3 rule-fallback turns may contribute to them. The model never made a task suggestion, so the authority and adoption question cannot be tested at all. The prompt shows each agent its family and closeness scores, so any family bias may come from the prompt rather than emerge on its own. Nothing here confirms or refutes CAREB-MAS.
+
+## Cross-round memory (`--memory`, Talewell/AMP-inspired)
+
+`amp_memory.py` is a small Python memory store modeled on **AMP (Agent Memory Protocol)** as implemented by [Talewell](https://github.com/LeoYeAI/talewell) (MIT, © 2026 MyClaw.ai). It is an independent re-implementation, not Talewell code, and it is not protocol-conformant. From Talewell it borrows:
+- one Markdown file per memory, with frontmatter (`id`, `kind: episode`, `aliases`, `origin`, `importance`, `observedAt`)
+- recall scored as importance × (0.6 + 0.4 × recency decay)
+
+Time is counted in sim rounds, not wall-clock time.
+
+- With `--memory --memory-dir runs/memory/<name>`, each round writes an episode for every act of help ("Elm helped me (2) in round 21") under `<dir>/<agent>/episodes/`. These files are gitignored.
+- The next run loads that store:
+  - Each agent's starting closeness is raised by its decayed "who helped me" ledger (up to +2).
+  - Rules mode adds a reciprocity bonus of up to +0.5 help toward past helpers.
+  - LLM mode gets `remembered_help_from_past_rounds` (top 4) and the 3 best-recalled episodes in the prompt.
+- To reproduce, run `./compare_memory.sh`. For seeds 1-5 it runs session 1 (12 rounds, writing memory), then session 2 (12 rounds, seed+100), once with memory and once without.
+
+### Rules mode, session 2, mean of seeds 1-5
+| metric | no memory | with memory |
+|---|---|---|
+| mean help, all pairs (0-3) | 1.53 | 2.70 |
+| same family | 2.68 | 2.95 |
+| cross family | 1.17 | 2.54 |
+| family ↔ unaligned | 1.25 | 2.69 |
+| unaligned ↔ unaligned | 1.10 | 2.90 |
+| worst-off agent's utility (care floor) | 43.1 | 102.2 |
+| mean utility | 64.1 | 113.6 |
+| final mean closeness (1-5) | 4.08 | 4.97 |
+
+**Honest read:** this is mostly built in. Memory raises starting closeness, and in rules mode help is a direct function of closeness. So the jump in cooperation and the flattening of the family gradient show that the plumbing works. They are not evidence of emergence. With memory, closeness saturates near 5, so authority spread collapses, and the closeness-authority correlation is undefined in 3 of 5 seeds.
+
+### Tiny LLM check (qwen2.5:0.5b, seed 7, 3 rounds, 24 calls each, 48 total)
+| metric | no memory | with memory (from seed-1 store) |
+|---|---|---|
+| mean help, all pairs | 0.00 | 0.41 |
+| final mean closeness | 1.68 | 3.67 |
+| timeouts / parse failures | 0 / 0 | 3 / 1 |
+
+**Very weak evidence.** The with-memory run had 4 turns that fell back to the rules agent, and those turns give help on their own. Its starting closeness was also already raised by memory. With one seed and 3 rounds, it cannot separate a memory effect from fallback noise. Taken at face value, the without-memory run shows that the 0.5B model by itself gave no help at all.

@@ -1,6 +1,1 @@
-.env
-*.env
-.venv*/
-__pycache__/
-*.log
-secrets*
+runs/memory/

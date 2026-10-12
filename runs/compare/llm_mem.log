@@ -1,0 +1,42 @@
+parse fail, rule fallback
+llm error, rule fallback: APITimeoutError
+llm error, rule fallback: APITimeoutError
+llm error, rule fallback: APITimeoutError
+{
+ "mean_help_by_tier": {
+  "same_family": 0.639,
+  "cross_family": 0.556,
+  "family_unaligned": 0.208,
+  "unaligned_unaligned": 0
+ },
+ "n_help_obs": {
+  "same_family": 36,
+  "cross_family": 54,
+  "family_unaligned": 72,
+  "unaligned_unaligned": 6
+ },
+ "authority_adoption_rate": {},
+ "final_in_closeness": {
+  "Ash": 3.48,
+  "Birch": 3.48,
+  "Cedar": 4.45,
+  "Dune": 4.03,
+  "Elm": 4.03,
+  "Fern": 3.45,
+  "Gale": 3.22,
+  "Hale": 3.22
+ },
+ "mean_help_all": 0.405,
+ "min_util": -25.0,
+ "mean_util": 4.25,
+ "final_mean_closeness": 3.67,
+ "chance_adoption": 0.333,
+ "api_calls_attempted": 24,
+ "api_calls_failed": 3,
+ "json_parse_failures": 1,
+ "timeouts": 3,
+ "mode": "llm",
+ "rounds": 3,
+ "seed": 7,
+ "memory": true
+}

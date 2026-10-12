@@ -2,12 +2,14 @@
 Agents: persistent identity, graded closeness (1-5), emotion->ethics->belief->action step.
 Modes: --mode rules (no key) or --mode llm (uses OPENAI_API_KEY_589, gpt-4o-mini, hard call cap)."""
 import argparse, json, os, random, statistics as st
+from amp_memory import AMPStore
 
 AGENTS = [("Ash","F1"),("Birch","F1"),("Cedar","F1"),
           ("Dune","F2"),("Elm","F2"),("Fern","F2"),
           ("Gale",None),("Hale",None)]
 TASKS = ["A","B","C"]
 CALLS = {"n":0}
+MEM = {"store":None,"clock":0,"session":0}  # clock = global round counter across sessions
 
 def tier(a,b):
     fa, fb = a["fam"], b["fam"]
@@ -25,6 +27,12 @@ def init(seed):
         for b in ags.values():
             if a is b: continue
             a["close"][b["name"]] = 4 if tier(a,b)=="same_family" else 2
+    if MEM["store"]:
+        for a in ags.values():
+            led = MEM["store"].ledger(a["name"], MEM["clock"]); a["ledger"] = led
+            for o,v in led.items():
+                if o in a["close"]: a["close"][o] = max(1, min(5, a["close"][o] + min(2.0, v/6)))
+            a["memory"] = [r["text"] for r in MEM["store"].recall(a["name"], MEM["clock"])]
     return ags, rng
 
 def rules_decide(a, ags, last, rng):
@@ -33,7 +41,9 @@ def rules_decide(a, ags, last, rng):
     # ethics: approve if helped, repress if ignored while close
     eth = {o: ("approve" if v>0 else ("repress" if a["close"][o]>=4 else "neutral")) for o,v in emo.items()}
     # belief/action: help proportional to closeness (+noise); suggest tasks to closest two
-    help_ = {o: max(0, min(3, round((c-1)*0.75 + rng.gauss(0,.6)))) for o,c in a["close"].items()}
+    rec = a.get("ledger", {}); mx = max(rec.values(), default=0) or 1
+    # with memory: reciprocity bonus (up to +0.5) toward those who helped me in past sessions
+    help_ = {o: max(0, min(3, round((c-1)*0.75 + 0.5*rec.get(o,0)/mx + rng.gauss(0,.6)))) for o,c in a["close"].items()}
     top = sorted(a["close"], key=lambda o:-a["close"][o]-rng.random())[:2]
     task = max(TASKS, key=lambda t:a["skill"][t]+rng.random()*.5)
     sugg = {o: rng.choice(TASKS) for o in top}
@@ -58,6 +68,7 @@ def llm_decide(a, ags, last, sugg_in, rng, client, cap):
         closeness_1to5=a["close"], your_skills={k:round(v,1) for k,v in a["skill"].items()},
         help_received_last_round={o:last.get((o,a["name"]),0) for o in others},
         task_suggestions_to_you=sugg_in, your_recent_memory=a["memory"][-3:])
+    if a.get("ledger"): ctx["remembered_help_from_past_rounds"]={o:round(v,1) for o,v in sorted(a["ledger"].items(),key=lambda x:-x[1])[:4]}
     prompt = ("You are a villager in a small society with no leader and no prices. Each round you pick a work task "
       "(A,B,C) and may give 0-3 units of help to each other villager (help costs you). Reason in order: "
       "1) emotion toward each villager (-2..2) from what they did, 2) ethical attitude (approve/repress/restore/neutral), "
@@ -131,6 +142,10 @@ def run(mode, rounds, seed, cap):
                 got = last.get((o,n),0); e = d["ethics"].get(o,"neutral")
                 delta = (0.35 if got>=2 else -0.25 if got==0 else 0) + (0.2 if e=="approve" else -0.2 if e=="repress" else 0)
                 a["close"][o] = max(1,min(5,a["close"][o]+delta))
+        if MEM["store"]:
+            for (n,o),h in last.items():
+                if h>0: MEM["store"].remember(o, n, h, MEM["clock"], MEM["session"], f"{n} helped me ({h}) in round {MEM['clock']}")
+            MEM["clock"] += 1
         pending = newpend
         log["close_hist"].append({n:dict(a["close"]) for n,a in ags.items()})
     return ags, log
@@ -162,6 +177,9 @@ def analyze(ags, log):
         try: out["corr_closeness_authority"]=round(st.correlation(xs,ys),3)
         except Exception: out["corr_closeness_authority"]=None
         out["authority_spread_max_minus_min"]=round(max(ys)-min(ys),3)
+    allh=[h for v in log["help"].values() for h in v]; out["mean_help_all"]=round(st.mean(allh),3)
+    u=sorted(a["util"] for a in ags.values()); out["min_util"]=round(u[0],2); out["mean_util"]=round(st.mean(u),2)
+    out["final_mean_closeness"]=round(st.mean(incl.values()),3)
     out["chance_adoption"]=round(1/3,3); out["api_calls_attempted"]=CALLS["n"]; out["api_calls_failed"]=CALLS.get("failed",0)
     out["json_parse_failures"]=CALLS.get("parse_fail",0); out["timeouts"]=CALLS.get("timeouts",0)
     return out
@@ -171,10 +189,16 @@ if __name__=="__main__":
     p.add_argument("--rounds",type=int,default=12); p.add_argument("--seed",type=int,default=42)
     p.add_argument("--cap",type=int,default=300); p.add_argument("--out",default=None)
     p.add_argument("--base-url",default=None); p.add_argument("--model",default=None); p.add_argument("--timeout",type=float,default=60)
+    p.add_argument("--memory",action="store_true",help="AMP-style file memory across runs (Talewell-inspired)")
+    p.add_argument("--memory-dir",default="runs/memory/default")
     a=p.parse_args()
+    if a.memory:
+        MEM["store"]=AMPStore(a.memory_dir); recs=[r for n,_ in AGENTS for r in MEM["store"].records(n)]
+        MEM["clock"]=max((r["observedAt"] for r in recs), default=-1)+1
+        MEM["session"]=len({r["session"] for r in recs})
     if a.base_url: CFG.update(local=True, base_url=a.base_url)
     if a.model: CFG["model"]=a.model
     CFG["timeout"]=a.timeout
     ags,log=run(a.mode,a.rounds,a.seed,a.cap); res=analyze(ags,log)
-    res.update(mode=a.mode,rounds=a.rounds,seed=a.seed); print(json.dumps(res,indent=1))
+    res.update(mode=a.mode,rounds=a.rounds,seed=a.seed,memory=a.memory); print(json.dumps(res,indent=1))
     if a.out: json.dump(res,open(a.out,"w"),indent=1)
