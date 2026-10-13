@@ -3,13 +3,15 @@ Agents: persistent identity, graded closeness (1-5), emotion->ethics->belief->ac
 Modes: --mode rules (no key) or --mode llm (uses OPENAI_API_KEY_589, gpt-4o-mini, hard call cap)."""
 import argparse, json, os, random, statistics as st
 from amp_memory import AMPStore
+from reflection import MemoryStream, Block, persona_block, night
 
 AGENTS = [("Ash","F1"),("Birch","F1"),("Cedar","F1"),
           ("Dune","F2"),("Elm","F2"),("Fern","F2"),
           ("Gale",None),("Hale",None)]
 TASKS = ["A","B","C"]
 CALLS = {"n":0}
-MEM = {"store":None,"clock":0,"session":0}  # clock = global round counter across sessions
+MEM = {"store":None,"clock":0,"session":0}
+OPT = {"reflect":False,"shared":False,"day_len":4,"placebo":False}  # clock = global round counter across sessions
 
 def tier(a,b):
     fa, fb = a["fam"], b["fam"]
@@ -22,7 +24,9 @@ def init(seed):
     for n,f in AGENTS:
         ags[n] = dict(name=n, fam=f, skill={t:1.0 for t in TASKS},
                       pref=dict(zip(TASKS,[rng.random()+.2 for _ in TASKS])),
-                      bias=rng.uniform(-.5,.5), close={}, memory=[], util=0.0)
+                      bias=rng.uniform(-.5,.5), close={}, memory=[], util=0.0,
+                      stream=MemoryStream(), reflections=[], bias_next={})
+        ags[n]["persona"] = persona_block(ags[n])
     for a in ags.values():
         for b in ags.values():
             if a is b: continue
@@ -43,7 +47,7 @@ def rules_decide(a, ags, last, rng):
     # belief/action: help proportional to closeness (+noise); suggest tasks to closest two
     rec = a.get("ledger", {}); mx = max(rec.values(), default=0) or 1
     # with memory: reciprocity bonus (up to +0.5) toward those who helped me in past sessions
-    help_ = {o: max(0, min(3, round((c-1)*0.75 + 0.5*rec.get(o,0)/mx + rng.gauss(0,.6)))) for o,c in a["close"].items()}
+    help_ = {o: max(0, min(3, round((c-1)*0.75 + 0.5*rec.get(o,0)/mx + a.get('bias_next',{}).get(o,0) + rng.gauss(0,.6)))) for o,c in a["close"].items()}
     top = sorted(a["close"], key=lambda o:-a["close"][o]-rng.random())[:2]
     task = max(TASKS, key=lambda t:a["skill"][t]+rng.random()*.5)
     sugg = {o: rng.choice(TASKS) for o in top}
@@ -117,6 +121,9 @@ def run(mode, rounds, seed, cap):
             client = OpenAI(api_key=key, max_retries=0)
     last, pending = {}, {n:{} for n in ags}
     log = dict(help={}, sugg=[], close_hist=[])
+    shared = Block("house", 400) if OPT["shared"] else None
+    prng = random.Random(seed + 999) if OPT["placebo"] else None
+    day_recv = {n:0 for n in ags}
     for t in range(rounds):
         dec = {}
         for n,a in ags.items():
@@ -146,8 +153,20 @@ def run(mode, rounds, seed, cap):
             for (n,o),h in last.items():
                 if h>0: MEM["store"].remember(o, n, h, MEM["clock"], MEM["session"], f"{n} helped me ({h}) in round {MEM['clock']}")
             MEM["clock"] += 1
+        recv = {n:0 for n in ags}
+        for (n,o),h in last.items():
+            recv[o] += h
+            if h>0: ags[o]["stream"].add(t, "received", n, h, f"{n} helped me ({h})")
+        for n in ags: day_recv[n] += recv[n]
+        low = min(recv, key=lambda n:(recv[n], n))
+        for n in ags: ags[n]["stream"].add(t, "low_help", low, 3, f"{low} got the least help today")
+        if (OPT["reflect"] or OPT["shared"]) and (t+1) % OPT["day_len"] == 0:
+            night(ags, day_recv, t, reflect=OPT["reflect"], shared=shared, placebo_rng=prng)
+            day_recv = {n:0 for n in ags}
         pending = newpend
         log["close_hist"].append({n:dict(a["close"]) for n,a in ags.items()})
+    log["shared_block"] = shared.value() if shared else None
+    log["sample_reflection"] = next((a["reflections"][-1] for a in ags.values() if a["reflections"]), None)
     return ags, log
 
 def analyze(ags, log):
@@ -182,6 +201,7 @@ def analyze(ags, log):
     out["final_mean_closeness"]=round(st.mean(incl.values()),3)
     out["chance_adoption"]=round(1/3,3); out["api_calls_attempted"]=CALLS["n"]; out["api_calls_failed"]=CALLS.get("failed",0)
     out["json_parse_failures"]=CALLS.get("parse_fail",0); out["timeouts"]=CALLS.get("timeouts",0)
+    out["sample_reflection"]=log.get("sample_reflection"); out["house_block"]=log.get("shared_block")
     return out
 
 if __name__=="__main__":
@@ -191,7 +211,12 @@ if __name__=="__main__":
     p.add_argument("--base-url",default=None); p.add_argument("--model",default=None); p.add_argument("--timeout",type=float,default=60)
     p.add_argument("--memory",action="store_true",help="AMP-style file memory across runs (Talewell-inspired)")
     p.add_argument("--memory-dir",default="runs/memory/default")
+    p.add_argument("--reflect",action="store_true",help="Smallville-style nightly rule-based reflection (Park et al. 2023)")
+    p.add_argument("--shared-block",action="store_true",help="Letta-style capped shared house memory block")
+    p.add_argument("--day-len",type=int,default=4,help="rounds per sim day (a 'night' follows each day)")
+    p.add_argument("--placebo",action="store_true",help="ablation: same reflection/shared bonus but to random targets")
     a=p.parse_args()
+    OPT.update(reflect=a.reflect, shared=a.shared_block, day_len=a.day_len, placebo=a.placebo)
     if a.memory:
         MEM["store"]=AMPStore(a.memory_dir); recs=[r for n,_ in AGENTS for r in MEM["store"].records(n)]
         MEM["clock"]=max((r["observedAt"] for r in recs), default=-1)+1
@@ -200,5 +225,5 @@ if __name__=="__main__":
     if a.model: CFG["model"]=a.model
     CFG["timeout"]=a.timeout
     ags,log=run(a.mode,a.rounds,a.seed,a.cap); res=analyze(ags,log)
-    res.update(mode=a.mode,rounds=a.rounds,seed=a.seed,memory=a.memory); print(json.dumps(res,indent=1))
+    res.update(mode=a.mode,rounds=a.rounds,seed=a.seed,memory=a.memory,reflect=a.reflect,shared_block=a.shared_block,placebo=a.placebo); print(json.dumps(res,indent=1))
     if a.out: json.dump(res,open(a.out,"w"),indent=1)

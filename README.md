@@ -90,3 +90,20 @@ Time is counted in sim rounds, not wall-clock time.
 | timeouts / parse failures | 0 / 0 | 3 / 1 |
 
 **Very weak evidence.** The with-memory run had 4 turns that fell back to the rules agent, and those turns give help on their own. Its starting closeness was also already raised by memory. With one seed and 3 rounds, it cannot separate a memory effect from fallback noise. Taken at face value, the without-memory run shows that the 0.5B model by itself gave no help at all.
+
+## Reflection + shared house memory (`--reflect`, `--shared-block`)
+- **`--reflect`**: Smallville-style memory stream. Each agent logs what happened ("X helped me", "Y got the least help"). Memories are scored as recency × importance × relevance. Every `--day-len` rounds (default 4) a "night" follows, when each agent writes a templated reflection, e.g. *"Night 11: Birch, Cedar helped me most; Gale seemed left out. Tomorrow I repay and check on them."* That reflection adds a small help bonus for the next day (+0.3 to helpers, +0.6 to whoever was left out). Credit: Park et al. 2023, *Generative Agents* ([joonspk-research/generative_agents](https://github.com/joonspk-research/generative_agents), Apache-2.0). This is an independent rule-based re-implementation with no LLM.
+- **`--shared-block`**: Letta-style memory blocks. Each agent has a persona block, and there is one shared "house" block (capped at 400 chars, oldest lines dropped first). Each night, the least-helped agent's name is appended to it, and every agent reads it (+0.4 help bonus toward the named agents). Credit: [letta-ai/letta](https://github.com/letta-ai/letta) (formerly MemGPT, Apache-2.0). This is an independent re-implementation.
+- **`--placebo`** (ablation): gives the same bonus amounts, but to random targets.
+
+`python compare_reflection.py` runs seeds 1-10. For each seed, session 1 writes memory and session 2 (seed+100) is measured. The care floor is the worst-off agent's utility.
+
+| arm | mean help (0-3) | care floor (min util) | mean util | floor wins vs baseline |
+|---|---|---|---|---|
+| baseline | 1.539 ± 0.118 | 44.8 ± 9.7 | 64.6 | 0/10 |
+| memory | 2.727 ± 0.070 | 102.6 ± 5.1 | 114.5 | 10/10 |
+| memory+reflect | 2.781 ± 0.057 | 105.9 ± 5.0 | 116.8 | 10/10 |
+| memory+reflect+shared | 2.811 ± 0.050 | 108.4 ± 4.4 | 118.0 | 10/10 |
+| placebo (mem+refl+shared, random targets) | 2.812 ± 0.047 | 107.0 ± 3.5 | 118.1 | 10/10 |
+
+**Honest reading:** The big jump comes from memory, and it is mechanical: remembered help raises closeness, and help is a direct function of closeness, so help hits the ceiling of 3. Reflection and the shared block add only a little. The placebo, which gives the same bonus to random agents, matches them on mean help and comes within about 1.4 utility points on the floor, which is well inside one standard deviation. So almost all of the extra gain comes from adding *more* help, not from the reflection *choosing well*. The targeting may help the floor slightly, but 10 seeds can't show that. These are rules, not minds.
