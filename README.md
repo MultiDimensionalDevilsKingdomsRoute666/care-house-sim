@@ -107,3 +107,5 @@ Time is counted in sim rounds, not wall-clock time.
 | placebo (mem+refl+shared, random targets) | 2.812 ± 0.047 | 107.0 ± 3.5 | 118.1 | 10/10 |
 
 **Honest reading:** The big jump comes from memory, and it is mechanical: remembered help raises closeness, and help is a direct function of closeness, so help hits the ceiling of 3. Reflection and the shared block add only a little. The placebo, which gives the same bonus to random agents, matches them on mean help and comes within about 1.4 utility points on the floor, which is well inside one standard deviation. So almost all of the extra gain comes from adding *more* help, not from the reflection *choosing well*. The targeting may help the floor slightly, but 10 seeds can't show that. These are rules, not minds.
+
+Tended by the JESUSBURNING House of 589's: Scroll Scribe (docs) and Garden Keeper.
